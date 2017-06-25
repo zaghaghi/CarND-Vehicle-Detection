@@ -4,6 +4,23 @@
 
 In this project, your goal is to write a software pipeline to detect vehicles in a video (start with the test_video.mp4 and later implement on full project_video.mp4), but the main output or product we want you to create is a detailed writeup of the project.  Check out the [writeup template](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) for this project and use it as a starting point for creating your own writeup.  
 
+File structure
+---
+The files that I added to complete the project have this structure
+```
+.
+│   vehicle_detection.py
+│   pipeline.bat
+│   pipeline.sh
+└── utils
+     │   vehicle_detector.py
+     │   vehicle_functions.py
+     │   camera_cal.py (copied from advance lane detection project)
+     │   binary_image.py (copied from advance lane detection project)
+     │   perspective_transform.py (copied from advance lane detection project)
+     │   lane_finder.py (copied from advance lane detection project)
+     │   video_processor.py (modified from the one in advance lane detection project)
+
 Creating a great writeup:
 ---
 A great writeup should include the rubric points as well as your description of how you addressed each point.  You should include a detailed description of the code used in each step (with line-number references and code snippets where necessary), and links to other supporting documents or external references.  You should include images in your writeup to demonstrate how your code works with examples.  
