@@ -4,28 +4,74 @@ import cv2
 from skimage.feature import hog
 
 class VehicleDetectorOptions:
-    color_space = 'LUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-    orient = 8 # HOG orientations
-    pix_per_cell = 9 # HOG pixels per cell
+    color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+    orient = 11 # HOG orientations
+    pix_per_cell = 8 # HOG pixels per cell
     cell_per_block = 2 # HOG cells per block
     hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
     spatial_size = (16, 16) # Spatial binning dimensions
     hist_bins = 32    # Number of histogram bins
-    spatial_feat = True # Spatial features on or off
+    spatial_feat = False # Spatial features on or off
     hist_feat = True # Histogram features on or off
     hog_feat = True # HOG features on or off
 
+    def __init__(self):
+        self.color_space = VehicleDetectorOptions.color_space
+        self.orient = VehicleDetectorOptions.orient
+        self.pix_per_cell = VehicleDetectorOptions.pix_per_cell
+        self.cell_per_block = VehicleDetectorOptions.cell_per_block
+        self.hog_channel = VehicleDetectorOptions.hog_channel
+        self.spatial_size = VehicleDetectorOptions.spatial_size
+        self.hist_bins = VehicleDetectorOptions.hist_bins
+        self.spatial_feat = VehicleDetectorOptions.spatial_feat
+        self.hist_feat = VehicleDetectorOptions.hist_feat
+        self.hog_feat = VehicleDetectorOptions.hog_feat
+
     def __repr__(self):
-        return ','.join([self.color_space, str(self.orient), str(self.pix_per_cell),
-                         str(self.cell_per_block), str(self.hog_channel),
-                         str(self.spatial_size), str(self.hist_bins),
-                         str(self.spatial_feat), str(self.hist_feat),
-                         str(self.hog_feat)])
+        return 'VehicleDetectorOptions(color_space={}, orient={}, pix_per_cell={}, cell_per_block={}, hog_channel={}, '\
+               'spatial_size={}, hist_bins={}, spatial_feat={}, hist_feat={}, hog_feat={}'\
+               .format(self.color_space, self.orient, self.pix_per_cell,
+                       self.cell_per_block, self.hog_channel, self.spatial_size,
+                       self.hist_bins, self.spatial_feat, self.hist_feat,
+                       self.hog_feat)
+
+def make_frame(image, text, size=(256, 256)):
+    ''' Makes white frame around input image and writes test above it '''
+    if image.ndim == 2:
+        image = np.dstack((image, image, image))
+    image = image.astype(np.uint8)
+    image = cv2.resize(image, size)
+    image = cv2.copyMakeBorder(image, 40, 10, 10, 10,
+                               cv2.BORDER_CONSTANT, value=(255, 255, 255))
+    cv2.putText(image, text, (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+    return image
+
+def make_image_thumb_map(input_dir, scale=1.0):
+    ''' Makes thumbnail map from all images in a directory '''
+    images = []
+    for filename in os.listdir(input_dir):
+        if filename.endswith('.jpg') or filename.endswith('.png'):
+            img = cv2.imread(os.path.join(input_dir, filename))
+            images.append(make_frame(img, filename, (int(img.shape[1]*scale), int(img.shape[0]*scale))))
+    image_per_row = 3
+    num_empty_image = (image_per_row - len(images) % image_per_row) % image_per_row
+    for _ in range(num_empty_image):
+        images.append(np.ones_like(images[-1]) * 255)
+    images = np.array(images)
+    images = np.reshape(images, (images.shape[0] // image_per_row,
+                                 image_per_row,
+                                 images.shape[1],
+                                 images.shape[2],
+                                 images.shape[3]))
+    rows = []
+    for row in range(images.shape[0]):
+        rows.append(np.hstack(images[row]))
+    return np.vstack(rows)
 
 def find_image_files(input_dir):
     ''' Finds all jpg and png images in input_dir '''
     filenames = []
-    for root, dirs, files in os.walk(input_dir):
+    for root, _, files in os.walk(input_dir):
         for filename in files:
             if filename.endswith('.jpg') or filename.endswith('.png'):
                 filenames.append(os.path.join(root, filename))
@@ -43,6 +89,8 @@ def convert_color(img, conv='YCrCb'):
         return cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     if conv == 'YUV':
         return cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    if conv == 'HLS':
+        return cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
     return img
 
 def get_hog_features(img, orient, pix_per_cell, cell_per_block,
@@ -196,7 +244,6 @@ def find_cars(img, scale, ystart, ystop, normalizer, svc, options):
                     patch_hog_features.append(hog_feat[ypos:ypos+nblocks_per_window,
                                                        xpos:xpos+nblocks_per_window].ravel())
                 patch_features.append(np.hstack(patch_hog_features))
-
             # Scale features and make a prediction
             test_features = normalizer.transform(np.concatenate(patch_features).reshape(1, -1))
             test_prediction = svc.predict(test_features)
