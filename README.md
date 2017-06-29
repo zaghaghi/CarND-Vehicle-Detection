@@ -15,6 +15,7 @@ The files that I added to complete the project have this structure
 └── utils
      │   vehicle_detector.py
      │   vehicle_functions.py
+     │   vehicle_tracker.py
      │   camera_cal.py (copied from advance lane detection project)
      │   binary_image.py (copied from advance lane detection project)
      │   perspective_transform.py (copied from advance lane detection project)
