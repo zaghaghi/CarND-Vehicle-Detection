@@ -3,3 +3,4 @@ model_backup/
 dataset/
 .vscode/
 model-*.p
+debug_images/

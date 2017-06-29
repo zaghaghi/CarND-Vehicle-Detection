@@ -1,10 +1,12 @@
 import os
 import click
+import itertools
 import random
 import cv2
 import numpy as np
 from utils import VehicleDetector
 from utils.vehicle_functions import *
+from utils.video_processor import VideoProcessor
 
 general_cli = click.Group()
 
@@ -70,26 +72,32 @@ def train(vehicle_dir, non_vehicle_dir, model):
 @click.option('--vehicle-dir', help='Input directory of vehicle images.')
 @click.option('--non-vehicle-dir', help='Input directory of non-vehicle images.')
 def hyper_train(vehicle_dir, non_vehicle_dir):
-    for color_space in ['RGB', 'YCrCb', 'LUV', 'HSV', 'YUV', 'HLS']:
-        for hog_channel in [0, 1, 2, 'ALL']:
-            for orient in [8, 9, 10, 11]:
-                model_filename = 'model_{}_{}_{}.p'.format(color_space, hog_channel, orient)
-                if os.path.exists(model_filename):
-                    continue
-                options = VehicleDetectorOptions()
-                options.color_space = color_space
-                options.orient = orient
-                options.pix_per_cell = 8
-                options.cell_per_block = 2
-                options.hog_channel = hog_channel
-                options.spatial_size = (16, 16)
-                options.hist_bins = 32
-                options.spatial_feat = False
-                options.hist_feat = False
-                options.hog_feat = True
-                detector = VehicleDetector(options)
-                detector.train(vehicle_dir, non_vehicle_dir)
-                detector.save(model_filename)
+    color_spaces = ['YCbCr', 'LUV', 'YUV']
+    hog_orientations = [7, 9, 11]
+    hog_channels = [0, 1, 2, 'ALL']
+    hog_pix_per_cells = [8, 16]
+    all_compinations = itertools.product(color_spaces, hog_orientations,
+                                         hog_channels, hog_pix_per_cells)
+    for color_space, hog_orient, hog_channel, hog_pix_per_cell in all_compinations:
+        model_filename = 'model_{}_{}_{}_{}.p'.format(color_space, hog_orient,
+                                                      hog_channel, hog_pix_per_cell)
+        model_filename = os.path.join('models', model_filename)
+        if os.path.exists(model_filename):
+            continue
+        options = VehicleDetectorOptions()
+        options.color_space = color_space
+        options.orient = hog_orient
+        options.pix_per_cell = hog_pix_per_cell
+        options.cell_per_block = 2
+        options.hog_channel = hog_channel
+        options.spatial_size = (16, 16)
+        options.hist_bins = 32
+        options.spatial_feat = True
+        options.hist_feat = True
+        options.hog_feat = True
+        detector = VehicleDetector(options)
+        detector.train(vehicle_dir, non_vehicle_dir)
+        detector.save(model_filename)
 
 @general_cli.command('print-info')
 @click.option('--model', help='Input model filename.')
@@ -108,7 +116,14 @@ def test(model, input_dir, output_dir):
     detector.load(model)
     for filename in os.listdir(input_dir):
         if filename.endswith('.jpg') or filename.endswith('.png'):
-            detector.find(os.path.join(input_dir, filename), output_dir)
+            image = cv2.imread(os.path.join(input_dir, filename))
+            _, final_img, label_img, heat_img, bbox_img = detector.find(image)
+            for out_type in ['bbox', 'heat', 'label', 'final']:
+                os.makedirs(os.path.join(output_dir, out_type), exist_ok=True)
+            cv2.imwrite(os.path.join(output_dir, 'final', filename), final_img)
+            cv2.imwrite(os.path.join(output_dir, 'label', filename), label_img)
+            cv2.imwrite(os.path.join(output_dir, 'heat', filename), heat_img)
+            cv2.imwrite(os.path.join(output_dir, 'bbox', filename), bbox_img)
 
     # stack output images in a single image suitable for writeup
     for out_type in ['bbox', 'heat', 'label', 'final']:
@@ -122,10 +137,13 @@ def test(model, input_dir, output_dir):
               prompt='Input video')
 @click.option('--output-file', help='Output video file.',
               prompt='Output video')
-@click.option('--lane-detection', default=False)
-@click.option('--debug', default=False)
-def process_video(model, input_file, output_file, lane_detection, debug):
-    pass
+@click.option('--camera-cal', help='Camera calibration file', default='camera.p')
+@click.option('--lane-detection/--no-lane-detection', default=False, help="Enable/disable lane-detection")
+@click.option('--debug/--no-debug', default=False, help="Enable/disable writing debug images")
+def process_video(model, input_file, output_file, camera_cal, lane_detection, debug):
+    debug_dir = 'debug_images' if debug else None
+    VideoProcessor.init(input_file, output_file, camera_cal, model, lane_detection, debug_dir)
+    VideoProcessor.process()
 
 if __name__ == '__main__':
     general_cli()

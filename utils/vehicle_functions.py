@@ -4,14 +4,14 @@ import cv2
 from skimage.feature import hog
 
 class VehicleDetectorOptions:
-    color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+    color_space = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
     orient = 11 # HOG orientations
-    pix_per_cell = 8 # HOG pixels per cell
+    pix_per_cell = 16 # HOG pixels per cell
     cell_per_block = 2 # HOG cells per block
     hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
     spatial_size = (16, 16) # Spatial binning dimensions
     hist_bins = 32    # Number of histogram bins
-    spatial_feat = False # Spatial features on or off
+    spatial_feat = True # Spatial features on or off
     hist_feat = True # Histogram features on or off
     hog_feat = True # HOG features on or off
 
@@ -96,10 +96,11 @@ def convert_color(img, conv='YCrCb'):
 def get_hog_features(img, orient, pix_per_cell, cell_per_block,
                      vis=False, feature_vec=True):
     ''' Define a function to return HOG features and visualization '''
+    img = img.astype(np.float32) / 255
     return hog(img, orientations=orient,
                pixels_per_cell=(pix_per_cell, pix_per_cell),
                cells_per_block=(cell_per_block, cell_per_block),
-               transform_sqrt=True, block_norm='L2-Hys',
+               transform_sqrt=False, block_norm='L2-Hys',
                visualise=vis, feature_vector=feature_vec)
 
 def bin_spatial(img, size=(32, 32)):
@@ -175,7 +176,7 @@ def extract_features_image_list(imgs, options):
     return features
 
 
-def find_cars(img, scale, ystart, ystop, normalizer, svc, options):
+def find_cars(img, scale, ystart, ystop, cell_per_step, normalizer, svc, options):
     ''' Define a single function that can extract features
         using hog sub-sampling and make predictions '''
     if options is None or not isinstance(options, VehicleDetectorOptions):
@@ -211,13 +212,13 @@ def find_cars(img, scale, ystart, ystop, normalizer, svc, options):
 
     window = 64
     nblocks_per_window = (window // options.pix_per_cell) - options.cell_per_block + 1
-    cells_per_step = 2  # Instead of overlap, define how many cells to step
+    cells_per_step = cell_per_step  # Instead of overlap, define how many cells to step
     nxsteps = (nxblocks - nblocks_per_window) // cells_per_step
     nysteps = (nyblocks - nblocks_per_window) // cells_per_step
 
     bboxes = []
-    for xb in range(nxsteps):
-        for yb in range(nysteps):
+    for xb in range(nxsteps+1):
+        for yb in range(nysteps+1):
             ypos = yb*cells_per_step
             xpos = xb*cells_per_step
             patch_features = []
@@ -245,7 +246,7 @@ def find_cars(img, scale, ystart, ystop, normalizer, svc, options):
                                                        xpos:xpos+nblocks_per_window].ravel())
                 patch_features.append(np.hstack(patch_hog_features))
             # Scale features and make a prediction
-            test_features = normalizer.transform(np.concatenate(patch_features).reshape(1, -1))
+            test_features = normalizer.transform(np.concatenate(patch_features).astype(np.float64).reshape(1, -1))
             test_prediction = svc.predict(test_features)
 
             if test_prediction == 1:
@@ -270,3 +271,17 @@ def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
     # Return the image copy with boxes drawn
     return imcopy
 
+def save_patch(image, xmin, xmax, ymin, ymax, filename):
+    xmin, xmax = (min(xmin, xmax), max(xmin, xmax))
+    ymin, ymax = (min(ymin, ymax), max(ymin, ymax))
+
+    xdiff = xmax - xmin
+    ydiff = ymax - ymin
+
+    size = max(xdiff, ydiff)
+    xmin, xmax = (xmin - (size - xdiff) // 2, xmin + size)
+    ymin, ymax = (ymin - (size - ydiff) // 2, ymin + size)
+    patch_image = image[ymin:ymax, xmin:xmax, :]
+    if patch_image.shape[0] == patch_image.shape[1] and patch_image.shape[0] > 30:
+        patch_image = cv2.resize(patch_image, (64, 64))
+        cv2.imwrite(filename, patch_image)

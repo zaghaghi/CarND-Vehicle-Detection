@@ -88,27 +88,25 @@ class VehicleDetector:
             self.model = obj['model']
             self.test_acc = obj['acc']
 
-    def find(self, image_filename, output_dir=None):
+    def find(self, image):
         ''' finds all cars in an image and returns a list of bounding boxes
             if output_dir isn't None, saves all intermediate images to output_dir '''
         # Find cars in multi-scale image
-        image = cv2.imread(image_filename)
-        bboxes1, _ = find_cars(image, 1, 400, 500, self.normalizer, self.model, self.options)
-        bboxes2, _ = find_cars(image, 1.5, 400, 550, self.normalizer, self.model, self.options)
-        bboxes3, _ = find_cars(image, 2.0, 400, 600, self.normalizer, self.model, self.options)
-        bboxes4, _ = find_cars(image, 3.0, 400, 680, self.normalizer, self.model, self.options)
-        bboxes = bboxes1 + bboxes2 + bboxes3 + bboxes4
-        # Draw bounding boxes and save it
-        result_img = draw_boxes(image, bboxes1, color=(0, 0, 255), thick=2)
-        result_img = draw_boxes(result_img, bboxes2, color=(255, 0, 0), thick=2)
-        result_img = draw_boxes(result_img, bboxes3, color=(0, 255, 0), thick=2)
-        result_img = draw_boxes(result_img, bboxes4, color=(0, 255, 255), thick=2)
-        _, filename = os.path.split(image_filename)
-        bbox_filename = os.path.join(output_dir, 'bbox', filename)
-        os.makedirs(os.path.join(output_dir, 'bbox'), exist_ok=True)
-        cv2.imwrite(bbox_filename, result_img)
+        scale_config = [(0.95, 400, 512, 1),
+                        (1.0, 360, 512, 1),
+                        (1.5, 380, 580, 1),
+                        (2.0, 400, 580, 1)
+                       ]
+        bboxes = []
+        for cfg in scale_config:
+            bb, _ = find_cars(image, cfg[0], cfg[1], cfg[2], cfg[3],
+                              self.normalizer, self.model, self.options)
+            bboxes.extend(bb)
+        # Draw bounding boxes
+        bbox_img = image
+        bbox_img = draw_boxes(bbox_img, bboxes, color=(0, 0, 255), thick=2)
 
-        # Build heatmap and save it
+        # Build heatmap
         heatmap = np.zeros_like(image)
         for bbox in bboxes:
             heatmap[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]] += 1
@@ -117,21 +115,14 @@ class VehicleDetector:
         heatmap[heatmap < threshold] = 0
         heat_scale = 5
         heatmap_cmap = cv2.applyColorMap(heatmap*heat_scale, cv2.COLORMAP_HOT)
-        heat_filename = os.path.join(output_dir, 'heat', filename)
-        os.makedirs(os.path.join(output_dir, 'heat'), exist_ok=True)
-        cv2.imwrite(heat_filename, heatmap_cmap)
 
         # Find connected components using skimage.measure.label
         heatmap[heatmap > 0] = 1
         labelmap, label_num = label(heatmap, background=0, return_num=True)
-        #labelmap_cmap = cv2.applyColorMap(labelmap, cv2.COLORMAP_BONE)
-        label_filename = os.path.join(output_dir, 'label', filename)
-        os.makedirs(os.path.join(output_dir, 'label'), exist_ok=True)
         if label_num > 0:
             labelmap_cmap = labelmap*255//label_num
         else:
             labelmap_cmap = labelmap
-        cv2.imwrite(label_filename, labelmap_cmap)
 
         # Find final bounding box
         final_bboxes = []
@@ -141,6 +132,5 @@ class VehicleDetector:
                     (np.max(label_indices[1]), np.max(label_indices[0])))
             final_bboxes.append(bbox)
         final_image = draw_boxes(image, final_bboxes, color=(0, 0, 255), thick=2)
-        final_filename = os.path.join(output_dir, 'final', filename)
-        os.makedirs(os.path.join(output_dir, 'final'), exist_ok=True)
-        cv2.imwrite(final_filename, final_image)
+
+        return final_bboxes, final_image, labelmap_cmap, heatmap_cmap, bbox_img
